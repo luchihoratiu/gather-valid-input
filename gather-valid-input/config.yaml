@@ -1,0 +1,5 @@
+variables:
+  - name: GITLAB_USER
+    description: Your username for given GitLab instance.
+  - name: GITLAB_TOKEN
+    description: Access token created by said "GITLAB_USER".
