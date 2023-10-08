@@ -1,42 +1,58 @@
 import os
+import inspect
 import argparse
 import importlib
+from common.extension import Extension
 from utils.config_handler import ConfigHandler
 
 
 class GatherValidInput:
     def __init__(self):
-        self.parser = argparse.ArgumentParser(
-            description="Gather input from given source, validate then store."
-        )
         self.root = f"{os.path.dirname(os.path.abspath(__file__))}{os.sep}"
+
         self.actions = {}
-        self.load("gatherers")
-        self.load("validators")
+        self.parser = argparse.ArgumentParser(
+            description="Gather, validate and store information."
+        )
 
-    def load(self, name):
-        path = os.path.join(self.root, name)
-        for dir, _, files in os.walk(path):
+        self.config = ConfigHandler(self.parser, self.root).config
+        self.load_extensions()
+
+    def load_extensions(self):
+        for directory, _, files in os.walk(self.root):
             for file in files:
-                if not file.endswith(".py".capitalize()):
-                    continue
-                module_root = dir.replace(self.root, "").replace(os.sep, ".")
-                module_path = f"{module_root}.{file[:-3]}"
-                module = importlib.import_module(module_path)
-                plugin_name = name[:-1].capitalize()
-                if hasattr(module, plugin_name):
-                    plugin = getattr(module, plugin_name)
-                    plugin().setup(self.parser, self.actions)
+                module = self.get_module(directory, file)
+                extension = self.get_extension(module)
+                if extension:
+                    extension().setup(
+                        parser=self.parser,
+                        actions=self.actions,
+                        config=self.config,
+                        root=self.root,
+                    )
 
-    def run(self, args=None):
-        parsed_args = self.parser.parse_args(args)
+    def get_module(self, directory, file):
+        if file == "__init__.py" or file == __file__ or not file.endswith(".py"):
+            return None
+
+        module_root = directory.replace(self.root, "").replace(os.sep, ".")
+        module_path = f"{module_root}.{file[:-3]}" if len(module_root) else file[:-3]
+        return importlib.import_module(module_path)
+
+    def get_extension(self, module):
+        for name, obj in inspect.getmembers(module):
+            if inspect.isclass(obj):
+                if issubclass(obj, Extension) and obj != Extension:
+                    return getattr(module, name)
+        return None
+
+    def run(self):
+        args = self.parser.parse_args()
         for action, func in self.actions.items():
-            if getattr(parsed_args, action, None) is not None:
-                func(parsed_args)
+            if getattr(args, action, None) is not None:
+                func(args)
 
 
 if __name__ == "__main__":
     app = GatherValidInput()
-    config = ConfigHandler(f"{app.root}config.yaml").config
-
     app.run()
